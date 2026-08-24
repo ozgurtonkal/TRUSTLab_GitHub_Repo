@@ -1,0 +1,8 @@
+﻿Tablo 2: Veri setlerinin karşılaştırılması.
+
+Veri Seti,Araç,Kayıt Sayısı¹,Özellik,Sınıf,Ortam,Benign:Attack
+TRUSTLab (2026),CICFlowMeter,4.501.692,73,16 (1+15),"Sentetik, VM-tabanlı IoT/edge testbed","1,33:1"
+CICIDS2017 (orijinal),CICFlowMeter,2.830.743,79,15,Sentetik kurumsal ağ (14 makine),~4:1
+CSE-CIC-IDS2018,CICFlowMeter-V3,16.232.943,80,~15,"Sentetik kurumsal ağ (AWS, 500 makine)","~4,9:1"
+"*CICIoT2023 (değerlendirildi, elendi)*",*Özel pipeline*,—,*46*,*34*,*Gerçek IoT (105 cihaz)*,*Şema uyumsuz*
+*IoTID20 (gelecek çalışma)*,*CICFlowMeter*,—,*~83*,*~10*,"*Gerçek IoT (akıllı ev, 2 cihaz)*",*Değerlendirilmedi*

@@ -1,0 +1,8 @@
+﻿"Tablo 8: Cross-dataset MCC değerleri (kesinlik, duyarlılık ve doğruluktan tam olarak geri hesaplanmıştır).³"
+
+Model,CICIDS2017 MCC,CSE-CIC-IDS2018 MCC
+Random Forest,"0,029","0,104"
+XGBoost,"0,073","0,010"
+LightGBM,"0,023","0,004"
+1D-CNN,"0,014","0,246"
+LSTM,"0,034","0,136"

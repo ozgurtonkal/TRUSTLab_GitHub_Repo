@@ -1,0 +1,11 @@
+﻿Tablo 3: TRUSTLab sınıf dağılımı.
+
+Sınıf,Akış Sayısı,Sınıf,Akış Sayısı
+Benign,2.572.388,Exploitation,150.576
+DDoS,188.820,API,158.575
+DNS,168.866,WebBased,153.947
+DoS,149.999,TLSSSL,122.145
+C2Beaconing,118.651,Exfiltration,111.752
+Slowloris,108.785,PortScan,107.580
+MITM,106.148,Bruteforce,105.712
+BufferOverflow,92.326,Evasion,85.422

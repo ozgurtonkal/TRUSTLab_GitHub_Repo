@@ -1,0 +1,8 @@
+﻿"Tablo 4d: Model eğitim süreleri (seed=42, 3.601.353 örnek, çift Tesla T4 GPU)."
+
+Model,Eğitim Süresi (s)
+Random Forest,1272
+XGBoost,62
+LightGBM,58
+1D-CNN,164
+LSTM,153

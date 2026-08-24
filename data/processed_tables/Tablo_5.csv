@@ -1,0 +1,8 @@
+﻿"Tablo 5: TRUSTLab veri seti içi ikili sınıflandırma performansı (51 özellik, seed=42)."
+
+Model,Doğruluk,Kesinlik,Duyarlılık,F1,ROC-AUC
+Random Forest,"0,984","0,971","0,992","0,981","0,999"
+XGBoost,"0,984","0,970","0,993","0,981","0,999"
+LightGBM,"0,983","0,967","0,993","0,980","0,999"
+1D-CNN,"0,935","0,918","0,932","0,925","0,989"
+LSTM,"0,938","0,928","0,927","0,928","0,987"

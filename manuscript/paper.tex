@@ -1,0 +1,807 @@
+\documentclass[a4paper,fleqn]{cas-sc}
+\usepackage[utf8]{inputenc}
+\usepackage{threeparttable}
+\usepackage{pifont}
+\usepackage{longtable}
+\usepackage{placeins}
+
+% Float placement control (prevents figures/tables from drifting far from
+% their in-text reference point in long documents with many floats)
+\setcounter{topnumber}{9}
+\setcounter{bottomnumber}{9}
+\setcounter{totalnumber}{16}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.9}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.7}
+
+\begin{document}
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{TRUSTLab Cross-Dataset Generalization}
+\shortauthors{Ö. Tonkal}
+
+\title [mode = title]{Cross-Dataset Generalization of the TRUSTLab Dataset in Network Intrusion Detection: A Comparative Machine and Deep Learning Study}
+
+\author[1]{\texorpdfstring{Özgür Tonkal}{Ozgur Tonkal}}[orcid=0000-0001-7219-9053]
+
+\cormark[1]
+
+\ead{ozgur.tonkal@samsun.edu.tr}
+
+\credit{Conceptualization, Methodology, Software, Validation, Formal analysis, Investigation, Data curation, Writing -- original draft, Writing -- review \& editing, Visualization}
+
+\affiliation[1]{organization={Department of Software Engineering, Faculty of Computer and Information Sciences, Samsun University},
+            addressline={İstiklal Mahallesi, Tekel Caddesi, Ballıca Kampüsü No:2},
+            city={19 Mayıs/Samsun},
+            postcode={55000},
+            state={Samsun},
+            country={Türkiye}}
+
+\cortext[1]{Corresponding author}
+
+\begin{abstract}
+Most models proposed for network intrusion detection systems are trained and tested on a single dataset, leaving their reliability largely undetermined once transferred to different network environments. This study addresses this gap by testing the TRUSTLab dataset, published in 2026 with particular emphasis on label integrity, separately on CICIDS2017 and CSE-CIC-IDS2018. Random Forest, XGBoost, LightGBM, 1D-CNN, and LSTM models were trained on TRUSTLab and evaluated first on its own test partition and subsequently on two independent datasets. During the construction of the common feature set, spurious discriminative signals arising from CICFlowMeter version differences and test-environment-specific configurations were detected and removed through statistical tests, leaving a set of 51 features. The models achieved an F1 score between 0.92 and 0.98 and a ROC-AUC above 0.98 on their own test partition. The same models saw their ROC-AUC fall to the 0.57--0.67 range on CICIDS2017 and to the 0.45--0.77 range on CSE-CIC-IDS2018. Random Forest yielding nearly identical ROC-AUC values across the two target datasets (difference of 0.011) indicates that the observed degradation reflects a systematic pattern rather than random fluctuation; this finding is further supported statistically by validation repeated across three independent random seeds (p $< 10^{-4}$). The results demonstrate that high accuracy obtained on a single dataset cannot be regarded as an operational guarantee, and that cross-dataset evaluation should become standard practice in intrusion detection research.
+\end{abstract}
+
+\begin{highlights}
+\item ROC-AUC falls from $>$0.98 within-dataset to 0.45--0.77 cross-dataset.
+\item Cross-dataset robustness is model-specific, not model-family-specific.
+\item Screening removes 13 CICFlowMeter-specific artifact features.
+\end{highlights}
+
+\begin{keywords}
+network intrusion detection \sep cross-dataset generalization \sep TRUSTLab \sep CICFlowMeter \sep distribution shift \sep machine learning \sep deep learning
+\end{keywords}
+
+\maketitle
+
+\section{Introduction}
+\label{sec:intro}
+
+The large majority of machine-learning-based systems proposed for intrusion detection in Internet of Things and edge computing environments are trained on a single dataset and tested on a held-out partition of that same dataset. This protocol indicates how well a model has learned the traffic patterns within that dataset, but it provides no reliable information on how the model will respond to traffic encountered on a different network. Sarhan et al. showed that the absence of a common feature schema across datasets constitutes one of the primary obstacles to fair comparison, and proposed a standardized NetFlow-based feature set to address this issue~\cite{Sarhan2022a}. A follow-up study by the same researchers empirically demonstrated that the performance gap between datasets persists even after alignment to a common feature set~\cite{Sarhan2022b}.
+
+This finding has not stood alone. Tareq et al., in a comparison across ToN-IoT, UNSW-NB15, and Edge-IIoTset, reported that models achieving 94--99\% accuracy on their own dataset lost robustness when transferred to a different dataset~\cite{Tareq2022}. Essop et al. showed that even edge-focused subsets derived from ToN-IoT carry substantial imbalance and require controlled subsampling~\cite{Essop2021}. In a more recent study, Cantone, Marrocco, and Bria conducted a comprehensive cross-dataset experiment across four datasets spanning CIC-IDS-2017, CSE-CIC-IDS2018, and two derived variants, finding an average within-dataset Matthews Correlation Coefficient (MCC) of 94.63\%, which fell to 29.35\% under cross-dataset evaluation~\cite{Cantone2024}. Eren et al., in a drift analysis across BoT-IoT, ToN-IoT, and UNSW-NB15, showed that a model with a training ROC-AUC of 0.999 fell to a test recall of 0.002 for the DoS class and a test ROC-AUC of 0.369 for the DDoS scenario~\cite{Eren2026}. These three independent studies, working with different dataset combinations, converge on the same conclusion: high within-dataset performance is no guarantee of successful cross-dataset transfer.
+
+Despite this recurring finding, most newly proposed datasets are still evaluated only in isolation. The TRUSTLab dataset, published in 2026 by Villafranca, Tasic, and Cano, is a CICFlowMeter-compatible, flow-based dataset for IoT and edge environments designed to eliminate label ambiguity~\cite{Villafranca2026}. The authors sought to prevent label blurring arising from the intermixing of benign and malicious traffic within the same time window by enforcing a strict session policy in which each capture session contains either benign traffic only or a single attack family. TRUSTLab comprises 15 attack families and approximately 4.6 million bidirectional flows; the paper itself explicitly states that the dataset's cross-dataset transfer capacity was not directly tested and is left to future work.
+
+This study fills this gap by systematically examining the extent to which five different models trained on the TRUSTLab dataset -- three tree-based ensemble methods and two deep learning architectures -- transfer to two independent, CICFlowMeter-based target datasets (CICIDS2017 and CSE-CIC-IDS2018). The contributions of the study fall into three points. First, a concrete answer is provided to the cross-dataset transfer question that TRUSTLab's authors explicitly identify as open. Second, it is shown that schema alignment alone is insufficient in cross-dataset comparisons, and that test-environment-specific artifacts (such as the fixed distribution of Init Win Byts values) and tool-version differences (such as bulk statistics not being computed in certain CICFlowMeter versions) must be systematically detected and removed through the Kolmogorov-Smirnov test and feature-importance analysis. Third, it is demonstrated empirically that cross-dataset robustness is \textbf{model-specific} rather than a property of model family (tree-based ensemble methods or deep learning), with no single family emerging as systematically superior either in aggregate binary classification or at the attack-type level.
+
+The remainder of the article is organized as follows. Section~\ref{sec:related} reviews the related literature, focusing on dataset design and cross-dataset generalization. Section~\ref{sec:methods} describes the datasets used, the feature alignment and artifact removal process, the model configurations, and the evaluation protocol. Section~\ref{sec:results} presents the within-dataset and cross-dataset findings. Section~\ref{sec:discussion} discusses the results in light of the literature, Section~\ref{sec:limitations} states the limitations of the study and possible directions for future work, and Section~\ref{sec:conclusion} summarizes the main findings.
+
+\FloatBarrier
+\section{Related Work}
+\label{sec:related}
+
+The dataset foundation of network intrusion detection research long rested on KDD Cup'99 and its revised form, NSL-KDD. These datasets have been shown to carry a severe redundant-record problem and to produce a systematic bias toward high-frequency patterns~\cite{Tavallaee2009}. CICIDS2017 was proposed by Sharafaldin, Habibi Lashkari, and Ghorbani as an alternative, extracting more than 80 flow features with the CICFlowMeter tool across seven attack families in an enterprise network environment~\cite{Sharafaldin2018}. The same group released the CSE-CIC-IDS2018 dataset the following year with a larger topology and additional attack scenarios; this dataset likewise employs feature extraction from the same CICFlowMeter family.
+
+IoT-specific datasets further accentuate feature-space heterogeneity because of device and protocol diversity. BoT-IoT focused on large-scale botnet traffic and extracted flow features with the Argus tool~\cite{Koroniotis2019}. ToN-IoT offered a multi-source representation combining network, operating-system telemetry, and user-level activity~\cite{Alsaedi2020}. Edge-IIoTset expanded device and protocol diversity across edge/fog/cloud layers~\cite{Ferrag2022}. CICIoT2023 presents traffic collected from 105 IoT devices alongside 33 attack types, yet employs a 46-feature schema derived from its own custom pipeline, one that does not directly overlap with CICFlowMeter's raw output~\cite{Neto2023}. IoTID20 processed traffic collected from two real IoT devices (a Wi-Fi camera and a smart speaker) in a smart-home setting with CICFlowMeter, yielding more than 80 features~\cite{Ullah2020}.
+
+Although each of these datasets offers an internally consistent feature representation, differing flow-collection tools, time-window definitions, and statistical computation strategies produce structurally incompatible feature spaces across datasets. Sarhan, Layeghy, and Portmann addressed this issue directly, converting raw PCAP traces into a common NetFlow-based schema to construct the NF-v2 family, and showed that dataset-induced variability affects performance even in scenarios employing a common schema~\cite{Sarhan2022a,Sarhan2022b}. This study follows the common-schema approach proposed by Sarhan et al., but remains within the CICFlowMeter family rather than NetFlow, thereby exploiting a natural naming overlap (among TRUSTLab, CICIDS2017, and CSE-CIC-IDS2018).
+
+The magnitude of cross-dataset performance degradation has been repeatedly confirmed by different research groups. Cantone, Marrocco, and Bria conducted a comprehensive experiment across four datasets (including CICIDS2017 and CSE-CIC-IDS2018), reporting that the average within-dataset Matthews Correlation Coefficient (MCC) of 94.63\% dropped to 29.35\% under cross-dataset evaluation~\cite{Cantone2024}. Eren et al., in a drift analysis across BoT-IoT, ToN-IoT, and UNSW-NB15, used four complementary statistics (Kolmogorov-Smirnov, Kullback-Leibler divergence, Jensen-Shannon divergence, and Wasserstein distance) to quantify feature-level distribution shift, showing that a model with a training ROC-AUC of 0.999 fell to a test recall of 0.002 for the DoS class and a test ROC-AUC of 0.369 for the DDoS scenario~\cite{Eren2026}. Bilal et al. examined the cross-environment generalization capacity of federated-learning-based IDS models across Edge-IIoTset, CIC-IoT2023, and TII-SSRC-23, emphasizing that evaluation based on a single dataset carries a risk of overfitting to site-specific traffic and label taxonomy~\cite{Bilal2026}.
+
+Focusing specifically on CICIDS2017, Catillo et al. conducted a similar inquiry confined directly to this dataset. In their study examining the transferability of models trained on CICIDS2017 for DoS attacks to different environments, they showed that detectors with near-unity within-dataset accuracy remained strongly dependent on the training data, which may not represent real production environments~\cite{Catillo2022}. A follow-up study by the same research group argued that the extent to which publicly available intrusion detection datasets advance the protection of real networks is accepted with exaggerated confidence within the academic community, and that this confidence warrants careful skepticism~\cite{Catillo2023}. These two studies directly support the premise of the present work (that high within-dataset performance cannot be regarded as an operational guarantee) and further demonstrate that this inquiry emerges even when confined to a single attack type (DoS); the present study extends the scope of this inquiry to five attack families and two independent target datasets.
+
+Two recent studies published in 2026 address the cross-dataset generalization problem from different angles. Elangovan et al. tested both temporal and cross-domain (enterprise-to-IoT) generalization behavior, without retraining, across four datasets collected between 2017 and 2024 (CIC-IDS2017, CSE-CIC-IDS2018, CICIoT2023, CIC-DIAD2024); they reported that the within-dataset Macro-F1 score of five models (Random Forest, Gradient Boosting, MLP, Autoencoder, 1D-CNN), ranging from 0.84 to 0.96, fell to 0.69--0.78 under enterprise-to-IoT transfer, and that tree-based ensembles exhibited lower degradation (6--23\%) than neural-network-based models~\cite{Elangovan2026}. Although this finding appears at first glance to contradict the ``model-specific rather than family-specific robustness'' finding of Section~\ref{sec:results} of the present study, the two studies operate on different model sets (their Gradient Boosting/Autoencoder combination versus our XGBoost/LightGBM/1D-CNN/LSTM combination) and different transfer types (enterprise-to-IoT domain transfer versus within-CIC-family transfer); this methodological difference suggests that the claim ``tree-based models are generally more robust'' may be a conditional observation dependent on the dataset pair and model set rather than a universal one -- this comparison is revisited in Section~\ref{sec:discussion}. Amin et al., in turn, pursued a different strategy, proposing a heterogeneous stacked ensemble architecture (GRU, LSTM, DNN, MLP) across four NetFlow-v2-compatible datasets (UNSW-NB15, BoT-IoT, ToN-IoT, CIC-IDS2018); rather than addressing cross-dataset performance loss through artifact detection, they sought to mitigate it through an architecture-level solution (preserving each base model's decision boundaries specific to its own source dataset and combining them with a meta-learner)~\cite{Amin2026}. These two studies indicate that the problem remains current and that the search for a solution continues along both diagnostic (the approach of the present study) and architecture-solution-oriented lines.
+
+What these studies share in common is that they attribute the cause of cross-dataset performance loss solely to ``dataset difference'' in general terms, without systematically distinguishing, through a statistical test, which features carry genuine discriminative power and which constitute an artifact specific to the data-collection process. The present study closes this gap by adding a feature-level diagnostic step: whether identically named features in two datasets genuinely measure the same physical quantity is evaluated jointly through distribution-shape comparison (the Kolmogorov-Smirnov statistic) and model feature-importance ranking. This step makes it possible, when testing the cross-dataset transfer of a newly published dataset such as TRUSTLab for the first time, to distinguish whether a transfer failure stems from genuine distribution shift or from a methodological artifact.
+
+Table~\ref{tbl1} compares the present study directly with seven closely related studies, detailed at the level of target datasets and artifact-detection method.
+
+\begin{table*}[width=\textwidth,cols=6,pos=htbp]
+\caption{Detailed comparison of cross-dataset generalization studies.}
+\label{tbl1}
+\begin{threeparttable}
+\footnotesize
+\begin{tabular}{@{}
+  p{2.0cm}
+  p{3.0cm}
+  p{3.8cm}
+  p{1.6cm}
+  p{2.0cm}
+  p{1.6cm}
+@{}}
+\toprule
+\textbf{Study} & \textbf{Target Datasets} & \textbf{Artifact Detection Method} & \textbf{Model Types} & \textbf{Schema-Compatibility Screening\tnote{a}} & \textbf{Multi-Target Consistency Evidence} \\
+\midrule
+D'Hooge et al.~\cite{Dhooge2020} &
+2 datasets (limited to DoS/Botnet attack classes only) &
+None &
+Tree-based &
+\ding{55} &
+\ding{55} \\[2pt]
+
+Verkerken et al.~\cite{Verkerken2022} &
+2 datasets (evaluated with unsupervised models) &
+None &
+Unsupervised (not tree/DL) &
+\ding{55} &
+\ding{55} \\[2pt]
+
+Sarhan et al.~\cite{Sarhan2022a,Sarhan2022b} &
+NF-v2 family (multiple NetFlow-compatible datasets) &
+Common NetFlow schema (standardization; not statistical screening) &
+Tree-based &
+\ding{55} &
+P \\[2pt]
+
+Cantone et al.~\cite{Cantone2024} &
+CIC-IDS2017, CSE-CIC-IDS2018 + 2 derived variants (LycoS family) &
+Post-hoc visualization (t-SNE); no pre-hoc statistical test &
+Tree-based &
+\ding{55} &
+\ding{51} \\[2pt]
+
+Eren et al.~\cite{Eren2026} &
+BoT-IoT, ToN-IoT, UNSW-NB15 &
+4 statistical metrics (KS, KL divergence, JS divergence, Wasserstein distance) &
+Tree + DL &
+\ding{55} &
+\ding{51} \\[2pt]
+
+Elangovan et al.~\cite{Elangovan2026} &
+CIC-IDS2017, CSE-CIC-IDS2018, CICIoT2023, CIC-DIAD2024 &
+Semantic feature-group stability analysis (a priori grouping; not a statistical test) &
+Tree + DL &
+\ding{51}\ (incompatible features excluded) &
+\ding{51} \\[2pt]
+
+Amin et al.~\cite{Amin2026} &
+NF-UNSW-NB15, NF-BoT-IoT, NF-ToN-IoT, NF-CIC-IDS2018 &
+None (architectural solution: stacked ensemble model) &
+DL &
+\ding{55} &
+\ding{51} \\[2pt]
+
+\textbf{This study} &
+\textbf{CICIDS2017, CSE-CIC-IDS2018 (CICIoT2023 evaluated and excluded)} &
+\textbf{KS test (59 features) + 4-metric verification (KL/JS/Wasserstein, 51 features) + multi-model feature importance (3 models), all pre-hoc} &
+\textbf{Tree + DL} &
+\textbf{\ding{51}\ (excluded due to CICIoT2023 schema incompatibility)} &
+\textbf{\ding{51}} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item[a] The systematic assessment of whether a candidate target dataset's feature-extraction schema is compatible with the source dataset, with incompatible candidates excluded for cause.
+\item[b] The citations to D'Hooge et al. and Verkerken et al. are also referenced in Section~\ref{sec:intro} as pioneering studies in the cross-dataset generalization literature. For these two studies, the full names of the target datasets were not reported in detail in the original articles; a general description (number of datasets and scope constraint) is therefore used in the table. The symbol P denotes a partial/indirect correspondence.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+\FloatBarrier
+\section{Materials and Methods}
+\label{sec:methods}
+
+Figure~\ref{fig1} summarizes the end-to-end methodology of the study: common feature-set extraction from three data sources, a two-stage artifact-removal process, model training, and cross-dataset evaluation on two independent targets.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=.55\textwidth]{figures/Figure1_Methodology.png}
+\caption{Methodological workflow from common feature-set extraction through cross-dataset evaluation.}
+\label{fig1}
+\end{figure}
+
+\FloatBarrier
+\subsection{Datasets}
+
+In addition to the three datasets used, the two candidates evaluated and discarded are also presented comparatively in Table~\ref{tbl2}, ensuring transparency in the dataset selection process.
+
+\begin{table*}[width=\textwidth,cols=7,pos=htbp]
+\caption{Comparison of datasets.}
+\label{tbl2}
+\begin{threeparttable}
+\footnotesize
+\begin{tabular}{@{}
+  p{2.4cm}
+  p{1.7cm}
+  r
+  p{0.9cm}
+  p{1.0cm}
+  p{2.9cm}
+  p{1.5cm}
+@{}}
+\toprule
+\textbf{Dataset} & \textbf{Tool} & \textbf{Records\tnote{a}} & \textbf{Feat.} & \textbf{Class} & \textbf{Environment} & \textbf{Ben.:Att.} \\
+\midrule
+TRUSTLab (2026) & CICFlowMeter & 4,501,692 & 73 & 16 (1+15) & Synthetic, VM-based IoT/edge testbed & 1.33:1 \\
+CICIDS2017 (original) & CICFlowMeter & 2,830,743 & 79 & 15 & Synthetic enterprise network (14 machines) & $\sim$4:1 \\
+CSE-CIC-IDS2018 & CICFlowMeter-V3 & 16,232,943 & 80 & $\sim$15 & Synthetic enterprise network (AWS, 500 machines) & $\sim$4.9:1 \\
+\textit{CICIoT2023 (evaluated, excluded)} & \textit{Custom pipeline} & \textit{--} & \textit{46} & \textit{34} & \textit{Real IoT (105 devices)} & \textit{Schema incompatible} \\
+\textit{IoTID20 (future work)} & \textit{CICFlowMeter} & \textit{--} & \textit{$\sim$83} & \textit{$\sim$10} & \textit{Real IoT (smart home, 2 devices)} & \textit{Not evaluated} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item[a] Post-cleaning record counts used in this study (may differ from the total record counts reported in the original publications).
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+Table~\ref{tbl3} shows the class distribution of TRUSTLab's 16 classes. The Benign class accounts for 57\% of total flows, with the largest support among the remaining 15 attack families belonging to DDoS (188,820) and the smallest to Evasion (85,422).
+
+\begin{table}[width=.9\linewidth,cols=4,pos=htbp]
+\caption{TRUSTLab class distribution.}
+\label{tbl3}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}LRLR@{}}
+\toprule
+\textbf{Class} & \textbf{Flow Count} & \textbf{Class} & \textbf{Flow Count} \\
+\midrule
+Benign & 2,572,388 & Exploitation & 150,576 \\
+DDoS & 188,820 & API & 158,575 \\
+DNS & 168,866 & WebBased & 153,947 \\
+DoS & 149,999 & TLSSSL & 122,145 \\
+C2Beaconing & 118,651 & Exfiltration & 111,752 \\
+Slowloris & 108,785 & PortScan & 107,580 \\
+MITM & 106,148 & Bruteforce & 105,712 \\
+BufferOverflow & 92,326 & Evasion & 85,422 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+The binary (benign/attack) distributions of CICIDS2017 and CSE-CIC-IDS2018 are 2,273,097/557,646 and 13,484,708/2,748,235 flows, respectively; both are markedly more imbalanced than TRUSTLab's 1.33:1 ratio. \textbf{TRUSTLab}~\cite{Villafranca2026} was used for training and within-dataset evaluation. Generated in a VirtualBox-based virtual testbed, it covers enterprise services such as HTTP/S, DNS, SSH, SMTP, SNMP, NTP, and MySQL, as well as modern API traffic based on REST/GraphQL/SOAP. The dataset presents benign traffic and 15 attack families (API, Bruteforce, BufferOverflow, C2Beaconing, DDoS, DNS, DoS, Evasion, Exfiltration, Exploitation, MITM, PortScan, Slowloris, TLS/SSL, WebBased) as single-class session files. In the post-cleaning version used, the dataset comprises a total of 4,501,692 bidirectional flows, consisting of 57\% benign and 43\% attack traffic (a ratio of approximately 1.33:1).
+
+\textbf{CICIDS2017}~\cite{Sharafaldin2018} was used as the first cross-dataset target. The original (untrimmed) version, consisting of an eight-day capture, was chosen; it was determined in advance that certain Kaggle derivatives reduce the feature count to as few as 52, which would weaken the cross-dataset comparison. The dataset used comprises 2,830,743 flows, with a benign-to-attack ratio of approximately 4:1.
+
+\textbf{CSE-CIC-IDS2018} (produced by the same team as a successor to CICIDS2017 and documented on the official CIC dataset page; it has no separate peer-reviewed publication) was used as the second, independent cross-dataset target. It was generated on AWS in a synthetic enterprise network comprising 420 clients and 30 servers, with Brute-force, Heartbleed, Botnet, DoS, DDoS, web-attack, and insider-infiltration scenarios. Consisting of a ten-day capture, the dataset comprises 16,232,943 flows after removal of embedded header rows (a known data-quality issue arising from the file-merging process), with a benign-to-attack ratio of approximately 4.9:1.
+
+CICIoT2023~\cite{Neto2023} was also evaluated as a second candidate target, but it was determined that its official feature schema (e.g., \texttt{flow\_duration}, \texttt{Header\_Length}, \texttt{Magnitude}, \texttt{Radius}, \texttt{Covariance}, \texttt{Weight}) is not CICFlowMeter-based, and that only three to five conceptually similar fields could be established with TRUSTLab's feature set. A correspondence at this level was deemed insufficient for a statistically defensible cross-dataset test, and CSE-CIC-IDS2018 was chosen instead; this choice also allowed the study to work with a dataset originating from the same producing institution and the same tool (CICFlowMeter) as CICIDS2017.
+
+\FloatBarrier
+\subsection{Common Feature Set Construction and Artifact Removal}
+
+TRUSTLab provides 73 numerical CICFlowMeter features. Compared with CICIDS2017, only the \texttt{Protocol} field fails to overlap, and the remaining 72 features correspond directly (under the same naming convention, e.g., \texttt{Flow Duration}, \texttt{Tot Fwd Pkts}, \texttt{Flow Byts/s}). Compared with CSE-CIC-IDS2018, all 72 of these features overlap exactly, since both datasets follow the same abbreviated naming convention.
+
+In the initial cross-dataset trial using these 72 features, the ROC-AUC value fell to a level close to the random-guess boundary (range 0.53--0.63). To distinguish whether this decline stemmed from genuine distribution shift or from an artifact specific to the data-collection process, the number of unique values and the model feature-importance score for each feature were compared between TRUSTLab and the target dataset. This examination revealed two distinct artifact groups.
+
+The first group comprises the \texttt{Init Fwd Win Byts} and \texttt{Init Bwd Win Byts} fields. In TRUSTLab, these fields exhibit a near-binary distribution (65,535 or 0), reflecting a fixed operating-system/virtual-machine configuration in the test environment; in CICIDS2017, the same fields take on dozens of distinct values. In XGBoost's feature-importance ranking, \texttt{Init Bwd Win Byts} alone accounted for 33.8\% of the decision weight; this proportion indicates that the model learned the test environment's idiosyncratic fingerprint rather than attack behavior.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/Figure2_ArtifactEvidence.png}
+\caption{Most frequent value distribution of the \texttt{Init Bwd Win Byts} feature in TRUSTLab, CICIDS2017, and CSE-CIC-IDS2018. All 3,601,353 flows in the TRUSTLab training partition take only two values (65535 or 0). The same field is distributed across more than 236 distinct values in CICIDS2017 and 15,522 distinct values in CSE-CIC-IDS2018. This sharp contrast indicates that the feature encodes the fixed configuration of TRUSTLab's test environment rather than network-traffic behavior.}
+\label{fig2}
+\end{figure}
+
+The second group comprises six bulk statistics (\texttt{Fwd/Bwd Byts/b Avg}, \texttt{Fwd/Bwd Pkts/b Avg}, \texttt{Fwd/Bwd Blk Rate Avg}) and five TCP flag counters (\texttt{Fwd/Bwd PSH Flags}, \texttt{RST/PSH/ACK Flag Cnt}). These eleven features take on a constant value of zero or at most two distinct values in CICIDS2017; this behavior is consistent with a known limitation whereby the CICFlowMeter version that generated the dataset does not compute bulk statistics. A total of 13 features (two environment-fingerprint fields, six bulk statistics, five flag counters) were removed on this basis.
+
+All 13 removed features were independently re-verified on both target datasets. In CSE-CIC-IDS2018, the six bulk statistics were again found to be fixed at a single value (nunique = 1); this confirms that the limitation is not specific to CICIDS2017 but is a shared characteristic of the 2017--2018 CICFlowMeter processing pipeline within the same CIC family. The five TCP flag features likewise took on at most two distinct values in CSE-CIC-IDS2018, with \texttt{Bwd PSH Flags} again found to be entirely constant. In contrast, \texttt{Init Fwd/Bwd Win Byts} exhibited diversity in CSE-CIC-IDS2018 similar to that in CICIDS2017 (16,046 and 15,522 distinct values, respectively), once again confirming that the problem with these two features lies in TRUSTLab's own test environment rather than in the target datasets. Consequently, all 13 removed features exhibited the same pattern in both independent target datasets, confirming that none was excluded erroneously.
+
+A further check on the remaining 59 features found that, within TRUSTLab's own data, the \texttt{Active Mean} and \texttt{Idle Mean} fields carry identical values and that the \texttt{Active Std} and \texttt{Idle Std} fields are zero; this was assessed as a computational inconsistency specific to TRUSTLab, independent of the target dataset, and the eight Active/Idle fields were removed on this separate basis as well. The resulting final set comprises \textbf{51 features}.
+
+To confirm that the removal process was halted at a principled threshold, the Kolmogorov-Smirnov statistic between TRUSTLab and CICIDS2017 was computed for every member of the resulting 59-feature intermediate set (Figure~\ref{fig3}). Three features (\texttt{Fwd/Bwd URG Flags}, \texttt{ECE Flag Cnt}) showed near-complete overlap (D $<$ 0.001), while the remaining 48 features outside the Active/Idle family exhibited a graded distribution difference ranging from 0.07 to 0.95. This graded pattern indicates that no single ``broken'' feature is responsible, and that the observed difference constitutes a genuine and expected distribution shift; no further feature removal based on the CICIDS2017 comparison was performed beyond this point. The exclusion of the Active/Idle family from the final set, as explained above, was instead based on a separate rationale grounded in TRUSTLab's own internal consistency, independent of the comparison with CICIDS2017.
+
+Table~\ref{tbl4} presents the full numerical KS values for the same 59 features, classified according to the severity thresholds proposed by Eren et al.~\cite{Eren2026} (Low $<$0.1; Moderate 0.1--0.3; High 0.3--0.6; Severe $>$0.6). These 59 features exclude those already removed in the initial screening stage (Group A/B/C, 13 features); only the TRUSTLab-CICIDS2017 distribution difference for the features surviving that initial screening is reported here.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=.5\textwidth]{figures/Figure3_KS_Drift.png}
+\caption{Kolmogorov-Smirnov statistic computed between TRUSTLab and CICIDS2017 for 59 features. Red bars denote the Active/Idle family, subsequently excluded on grounds of within-TRUSTLab inconsistency; blue bars denote features retained in the final 51-feature set.}
+\label{fig3}
+\end{figure}
+
+\begingroup
+\footnotesize
+\begin{longtable}{@{}r l r l l@{}}
+\caption{Kolmogorov-Smirnov statistic and severity classification between TRUSTLab and CICIDS2017 for 59 features.\tnote{a}}
+\label{tbl4} \\
+\toprule
+\textbf{\#} & \textbf{Feature} & \textbf{KS (D)} & \textbf{Severity} & \textbf{Status} \\
+\midrule
+\endfirsthead
+\multicolumn{5}{c}{\tablename\ \thetable\ -- continued from previous page} \\
+\toprule
+\textbf{\#} & \textbf{Feature} & \textbf{KS (D)} & \textbf{Severity} & \textbf{Status} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{5}{r}{\textit{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+1  & \texttt{Pkt Len Min}       & 0.95334 & Severe   & Retained (51) \\
+2  & \texttt{Active Max}        & 0.79550 & Severe   & Removed (Active/Idle) \\
+3  & \texttt{Active Mean}       & 0.79550 & Severe   & Removed (Active/Idle) \\
+4  & \texttt{Idle Mean}         & 0.79244 & Severe   & Removed (Active/Idle) \\
+5  & \texttt{Idle Max}          & 0.79244 & Severe   & Removed (Active/Idle) \\
+6  & \texttt{Fwd Pkt Len Min}   & 0.77790 & Severe   & Retained (51) \\
+7  & \texttt{SYN Flag Cnt}      & 0.63100 & Severe   & Retained (51) \\
+8  & \texttt{Fwd Pkt Len Mean}  & 0.61496 & Severe   & Retained (51) \\
+9  & \texttt{Fwd Seg Size Avg}  & 0.61496 & Severe   & Retained (51) \\
+10 & \texttt{Bwd Pkt Len Min}   & 0.60166 & Severe   & Retained (51) \\
+11 & \texttt{Dst Port}          & 0.56968 & High     & Retained (51) \\
+12 & \texttt{Fwd Pkt Len Max}   & 0.52842 & High     & Retained (51) \\
+13 & \texttt{Flow IAT Min}      & 0.48998 & High     & Retained (51) \\
+14 & \texttt{Pkt Len Mean}      & 0.48976 & High     & Retained (51) \\
+15 & \texttt{Pkt Size Avg}      & 0.41682 & High     & Retained (51) \\
+16 & \texttt{Pkt Len Max}       & 0.41558 & High     & Retained (51) \\
+17 & \texttt{Bwd Seg Size Avg}  & 0.36074 & High     & Retained (51) \\
+18 & \texttt{Bwd Pkt Len Mean}  & 0.36074 & High     & Retained (51) \\
+19 & \texttt{FIN Flag Cnt}      & 0.35448 & High     & Retained (51) \\
+20 & \texttt{Bwd Pkt Len Max}   & 0.34618 & High     & Retained (51) \\
+21 & \texttt{Fwd IAT Min}       & 0.34590 & High     & Retained (51) \\
+22 & \texttt{Bwd IAT Min}       & 0.33148 & High     & Retained (51) \\
+23 & \texttt{Down/Up Ratio}     & 0.31276 & High     & Retained (51) \\
+24 & \texttt{TotLen Bwd Pkts}   & 0.29994 & Moderate & Retained (51) \\
+25 & \texttt{Subflow Bwd Byts}  & 0.29994 & Moderate & Retained (51) \\
+26 & \texttt{Flow Byts/s}       & 0.28188 & Moderate & Retained (51) \\
+27 & \texttt{Tot Fwd Pkts}      & 0.27836 & Moderate & Retained (51) \\
+28 & \texttt{Subflow Fwd Pkts}  & 0.27836 & Moderate & Retained (51) \\
+29 & \texttt{Fwd IAT Max}       & 0.27438 & Moderate & Retained (51) \\
+30 & \texttt{Fwd IAT Tot}       & 0.27438 & Moderate & Retained (51) \\
+31 & \texttt{Fwd IAT Mean}      & 0.27436 & Moderate & Retained (51) \\
+32 & \texttt{Subflow Fwd Byts}  & 0.27380 & Moderate & Retained (51) \\
+33 & \texttt{TotLen Fwd Pkts}   & 0.27380 & Moderate & Retained (51) \\
+34 & \texttt{Flow IAT Mean}     & 0.25866 & Moderate & Retained (51) \\
+35 & \texttt{Flow Duration}     & 0.25768 & Moderate & Retained (51) \\
+36 & \texttt{Flow IAT Max}      & 0.25688 & Moderate & Retained (51) \\
+37 & \texttt{Flow Pkts/s}       & 0.25674 & Moderate & Retained (51) \\
+38 & \texttt{Bwd IAT Tot}       & 0.24846 & Moderate & Retained (51) \\
+39 & \texttt{Bwd IAT Max}       & 0.24772 & Moderate & Retained (51) \\
+40 & \texttt{Bwd IAT Mean}      & 0.22718 & Moderate & Retained (51) \\
+41 & \texttt{Flow IAT Std}      & 0.22210 & Moderate & Retained (51) \\
+42 & \texttt{Bwd Header Len}    & 0.22010 & Moderate & Retained (51) \\
+43 & \texttt{Idle Min}          & 0.20000 & Moderate & Removed (Active/Idle) \\
+44 & \texttt{Active Min}        & 0.19694 & Moderate & Removed (Active/Idle) \\
+45 & \texttt{Bwd IAT Std}       & 0.19280 & Moderate & Retained (51) \\
+46 & \texttt{Pkt Len Var}       & 0.19154 & Moderate & Retained (51) \\
+47 & \texttt{Pkt Len Std}       & 0.19154 & Moderate & Retained (51) \\
+48 & \texttt{Fwd IAT Std}       & 0.18654 & Moderate & Retained (51) \\
+49 & \texttt{Bwd Pkt Len Std}   & 0.17908 & Moderate & Retained (51) \\
+50 & \texttt{Fwd Header Len}    & 0.17732 & Moderate & Retained (51) \\
+51 & \texttt{Tot Bwd Pkts}      & 0.12262 & Moderate & Retained (51) \\
+52 & \texttt{Subflow Bwd Pkts}  & 0.12262 & Moderate & Retained (51) \\
+53 & \texttt{Fwd Pkt Len Std}   & 0.10628 & Moderate & Retained (51) \\
+54 & \texttt{URG Flag Cnt}      & 0.09460 & Low      & Retained (51) \\
+55 & \texttt{Idle Std}          & 0.08212 & Low      & Removed (Active/Idle) \\
+56 & \texttt{Active Std}        & 0.07380 & Low      & Removed (Active/Idle) \\
+57 & \texttt{Fwd URG Flags}     & 0.00014 & Low      & Retained (51) \\
+58 & \texttt{ECE Flag Cnt}      & 0.00010 & Low      & Retained (51) \\
+59 & \texttt{Bwd URG Flags}     & 0.00006 & Low      & Retained (51) \\
+\end{longtable}
+\endgroup
+
+\vspace{-0.5\baselineskip}
+\noindent\footnotesize\textsuperscript{a}~Severity thresholds are identical to the KS thresholds proposed in Table 4 of Eren et al.~\cite{Eren2026} (Low $<$0.1; Moderate 0.1--0.3; High 0.3--0.6; Severe $>$0.6).
+\normalsize
+
+A notable observation from Table~\ref{tbl4} is that of the 10 features falling into the ``Severe'' (D $>$ 0.6) class, 4 (Active Max/Mean, Idle Mean/Max) already belong to the Active/Idle family, while the remaining 6 (Pkt Len Min, Fwd Pkt Len Min, SYN Flag Cnt, Fwd Pkt Len Mean, Fwd Seg Size Avg, Bwd Pkt Len Min) are among the \textbf{retained} features. This confirms that the largest distribution differences are not confined solely to the removed features, and that legitimate/retained features likewise carry genuine and substantial domain shift -- reinforcing the interpretation that the severe cross-dataset performance loss reported in Section~\ref{sec:results} stems from genuine distribution difference rather than residual artifacts.
+
+Given that a single statistical test (KS) may incompletely characterize distribution shift, the three complementary metrics used by Eren et al.~\cite{Eren2026} (Kullback-Leibler divergence, Jensen-Shannon divergence, Wasserstein distance) were also computed for the full set of 51 final features. Each feature was scaled to the 0--1 range through min-max normalization robust to outliers (based on the 0.5th--99.5th percentile range), and all four metrics were computed on this common scale.
+
+Agreement among the four metrics is partial but meaningful. The Spearman rank correlation between KS and the other three metrics is moderate (KL: r = 0.386, p = 0.005; JS: r = 0.616, p $<$ 0.001; Wasserstein: r = 0.372, p = 0.007) -- indicating that the metrics capture partially overlapping but not fully identical aspects of the distribution difference. Of the 21 features classified as ``Severe'' or ``High'' severity by KS, the proportion remaining in the same category under KL is 47.6\%, under JS is 28.6\%, and under Wasserstein only 9.5\%. These low overlap rates are not unexpected: KS measures the maximum difference in distribution shape (between CDFs), whereas the Wasserstein distance measures the difference in the absolute location of the distributions (such as a shift in mean/median); a feature can differ substantially in shape while remaining similar in location, or vice versa.
+
+The strongest confirmation emerges among the features that independently receive ``Low'' severity under all four metrics: \texttt{URG Flag Cnt}, \texttt{ECE Flag Cnt}, \texttt{Fwd URG Flags}, and \texttt{Bwd URG Flags} -- the same features that also showed near-complete overlap under the KS test (Table~\ref{tbl4}) (D $<$ 0.001, except for URG Flag Cnt at D = 0.095). The full agreement of four independent metrics on these four features confirms that our original KS-based assessment is not driven by noise. Table~\ref{tbl4a} presents the 10 features with the highest average severity together with all four metrics.
+
+\begin{table}[width=.95\linewidth,cols=5,pos=htbp]
+\caption{Four-metric drift verification: the 10 features with the highest average severity (within the final 51-feature set).}
+\label{tbl4a}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}LRRRR@{}}
+\toprule
+\textbf{Feature} & \textbf{KS} & \textbf{KL} & \textbf{JS} & \textbf{Wasserstein} \\
+\midrule
+Pkt Len Min & 0.954 & 4.442 & 0.638 & 0.412 \\
+Fwd Pkt Len Min & 0.778 & 2.887 & 0.420 & 0.218 \\
+SYN Flag Cnt & 0.633 & 15.569 & 0.270 & 0.112 \\
+Bwd Pkt Len Min & 0.603 & 2.056 & 0.378 & 0.175 \\
+Dst Port & 0.569 & 1.008 & 0.198 & 0.379 \\
+Down/Up Ratio & 0.311 & 19.616 & 0.296 & 0.030 \\
+FIN Flag Cnt & 0.356 & 12.243 & 0.143 & 0.087 \\
+Fwd Pkt Len Mean & 0.616 & 0.713 & 0.160 & 0.049 \\
+Fwd Seg Size Avg & 0.616 & 0.713 & 0.160 & 0.049 \\
+Pkt Len Mean & 0.492 & 0.897 & 0.257 & 0.074 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+Considering that basing artifact detection on a single model's feature-importance ranking (XGBoost) may constitute a limitation, the same analysis was repeated for Random Forest and LightGBM (Table~\ref{tbl4b}). The result reveals two distinct patterns. The six bulk statistics consistently emerge with high importance across all three models -- \texttt{Fwd Byts/b Avg} is Random Forest's 3rd (4.08\%) and LightGBM's 10th (2.72\%) most important feature among 72 features; \texttt{Bwd Byts/b Avg} ranks within the top 12 for both models. This multi-model consistency reinforces the assessment that the bulk statistics are features that genuinely carry high discriminative power but cannot be transferred to the target datasets owing to the CICFlowMeter version difference. In contrast, the extraordinarily high importance of \texttt{Init Bwd Win Byts} in XGBoost (33.8\%, rank 1) is not replicated in the other two models (rank 38, 0.91\%, in Random Forest; rank 48, 0.22\%, in LightGBM); this indicates that this particular feature may reflect a dependency specific to XGBoost's tree-splitting strategy rather than a general pattern across the three models. This finding does not invalidate the removal decision -- since the decision already rests primarily on the KS test (Table~\ref{tbl4}) -- but it is methodologically worth noting, as it shows that feature-importance-based justification can be sensitive to model choice. The TCP flag features, in turn, consistently remained of low importance across all three models (mostly ranked 30th--57th among 72 features); although the removal of this group contributes only marginally to the model, the KS-test-based distribution-difference rationale retains its validity independently.
+
+\begin{table}[width=.95\linewidth,cols=4,pos=htbp]
+\caption{Importance ranking of bulk statistics across three models (within 72 features; 1 = most important).}
+\label{tbl4b}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}LRRR@{}}
+\toprule
+\textbf{Feature} & \textbf{Random Forest Rank} & \textbf{XGBoost Rank} & \textbf{LightGBM Rank} \\
+\midrule
+Fwd Byts/b Avg & 3 & 34 & 10 \\
+Bwd Byts/b Avg & 5 & 5 & 12 \\
+Fwd Pkts/b Avg & 6 & 9 & 4 \\
+Fwd Blk Rate Avg & 14 & 10 & 21 \\
+Bwd Blk Rate Avg & 19 & 16 & 22 \\
+Bwd Pkts/b Avg & 13 & 18 & 18 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\FloatBarrier
+\subsection{Model Configurations}
+
+The five models were trained with the same set of 51 features and the same train/test split (fixed random seed, stratified 80\%/20\% split). \textbf{Random Forest}~\cite{Breiman2001} was configured with 200 trees and a maximum depth of 20, \textbf{XGBoost}~\cite{ChenGuestrin2016} with 200 estimators and a histogram-based tree method, and \textbf{LightGBM}~\cite{Ke2017} with the \texttt{class\_weight=balanced} parameter to compensate for class imbalance in the multiclass task. \textbf{1D-CNN} is a lightweight architecture comprising two convolutional layers (64 and 128 filters), batch normalization, and global average pooling. \textbf{LSTM} consists of two recurrent layers (64 and 32 units). The deep learning models were trained on inputs scaled with \texttt{StandardScaler}, using early stopping (on validation loss, patience = 5) and model checkpointing (restoring the weights corresponding to the best validation loss).
+
+To support reproducibility, Table~\ref{tbl4c} lists the complete hyperparameters used across all five models. The hyperparameters were determined not through a systematic search (grid search, random search, or Bayesian optimization) but through reasonable default values commonly used in the literature, and were held fixed without modification throughout the entire study (including the within-domain, cross-dataset, single-attack, multi-seed, and bootstrap analyses). This choice prioritized comparability across experiments, eliminating the uncertainty that could arise from one model being better tuned than another. This does not, however, imply that any model reached an optimal hyperparameter configuration; this limitation is discussed further in Section~\ref{sec:limitations}.
+
+\begin{table}[width=\textwidth,cols=3,pos=htbp]
+\caption{Complete hyperparameter configuration for the five models.}
+\label{tbl4c}
+\footnotesize
+\begin{tabular}{@{}p{2.0cm}p{2.3cm}p{9.5cm}@{}}
+\toprule
+\textbf{Model} & \textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+\multirow{3}{*}{Random Forest} & n\_estimators & 200 \\
+ & max\_depth & 20 \\
+ & n\_jobs & $-1$ (all cores) \\
+\addlinespace
+\multirow{4}{*}{XGBoost} & n\_estimators & 200 \\
+ & max\_depth & 8 \\
+ & tree\_method & hist \\
+ & eval\_metric & logloss \\
+\addlinespace
+\multirow{3}{*}{LightGBM} & n\_estimators & 200 \\
+ & max\_depth & 8 \\
+ & class\_weight & balanced (multiclass task only) \\
+\addlinespace
+\multirow{4}{*}{1D-CNN} & Convolutional layers & Conv1D(64, kernel=3) $\rightarrow$ Conv1D(128, kernel=3) \\
+ & Normalization & BatchNormalization after each convolution \\
+ & Pooling & MaxPooling1D(2), followed by GlobalAveragePooling1D \\
+ & Dense layer & Dense(64, ReLU) $\rightarrow$ Dropout(0.3) $\rightarrow$ Dense(1, Sigmoid) \\
+\addlinespace
+\multirow{2}{*}{LSTM} & Recurrent layers & LSTM(64, return\_sequences=True) $\rightarrow$ LSTM(32) \\
+ & Dense layer & Dense(64, ReLU) $\rightarrow$ Dropout(0.3) $\rightarrow$ Dense(1, Sigmoid) \\
+\addlinespace
+\multirow{6}{*}{\parbox{2.2cm}{DL common\\(1D-CNN, LSTM)}} & Optimizer & Adam \\
+ & Loss function & Binary cross-entropy \\
+ & Epochs (upper bound) & 15 \\
+ & Batch size & 1024 \\
+ & Validation split & 10\% \\
+ & Early stopping & monitored on val\_loss, patience = 5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All experiments were carried out in a Kaggle cloud environment equipped with dual Tesla T4 GPUs. The training times summarized in Table~\ref{tbl4d} reveal a marked difference among the tree-based models: Random Forest completed in 1,272 seconds, whereas XGBoost and LightGBM, which use a histogram-based splitting strategy, remained under 60 seconds; the deep learning models (1D-CNN, LSTM) were trained on the GPU in 150--165 seconds, remaining below the 15-epoch upper bound owing to early stopping. Cross-dataset inference was measured jointly for the five models in a single streaming pass owing to memory constraints (and per-model timing therefore cannot be reported separately); the overall inference throughput was close between the two target datasets (CICIDS2017: $\sim$24,400; CSE-CIC-IDS2018: $\sim$26,300 flows/second), indicating that the streaming-based processing approach provides a consistent throughput independent of dataset size.
+
+\begin{table}[width=.7\linewidth,cols=2,pos=htbp]
+\caption{Model training times (seed=42, 3,601,353 samples, dual Tesla T4 GPUs).}
+\label{tbl4d}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}LR@{}}
+\toprule
+\textbf{Model} & \textbf{Training Time (s)} \\
+\midrule
+Random Forest & 1272 \\
+XGBoost & 62 \\
+LightGBM & 58 \\
+1D-CNN & 164 \\
+LSTM & 153 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\FloatBarrier
+\subsection{Evaluation Protocol}
+
+In the binary classification task (benign versus attack), each model was first evaluated on TRUSTLab's own test partition (within-dataset performance) and subsequently on the entirety of CICIDS2017 and CSE-CIC-IDS2018 (cross-dataset performance). In the cross-dataset evaluation, the models were not retrained; the weights learned on TRUSTLab were applied directly to the target dataset. Owing to the large scale of CSE-CIC-IDS2018 (16.2 million flows), the data were processed in a streaming fashion on a per-log-file basis to overcome memory constraints, with predictions generated over all flows without subsampling.
+
+The multiclass task (16 attack families) was evaluated only on TRUSTLab's own within-dataset test partition. TRUSTLab's 15-attack-family taxonomy is incompatible with the attack categories of CICIDS2017 and CSE-CIC-IDS2018 at three levels: categories specific to TRUSTLab (\texttt{API}, \texttt{C2Beaconing}, \texttt{Evasion}, \texttt{TLS/SSL}, \texttt{MITM}) have no counterpart in the target datasets; categories specific to the target datasets (\texttt{Heartbleed}, \texttt{Infiltration}) have no counterpart in TRUSTLab; and identically named categories (e.g., ``DDoS'') cover different attack techniques (L7 HTTP flood and UDP amplification in TRUSTLab versus the LOIC-HTTP/LOIC-UDP/HOIC tools in CSE-CIC-IDS2018). Owing to this incompatibility, forcibly aligning the multiclass categories was deemed statistically indefensible, and a multiclass cross-dataset test was not performed; this approach is consistent with the standard practice followed by Sarhan et al.~\cite{Sarhan2022a,Sarhan2022b} and Cantone et al.~\cite{Cantone2024}.
+
+Performance was measured with accuracy, precision, recall, F1 score, and ROC-AUC for the binary task, and with accuracy and macro-averaged precision, recall, and F1 score for the multiclass task. In the cross-dataset comparison, the difference between within-dataset and cross-dataset performance ($\Delta$F1, $\Delta$AUC) was used as the primary indicator of a model's transfer robustness. In addition, since F1 and accuracy are a well-known source of misleading conclusions in imbalanced binary classification~\cite{ChiccoJurman2020}, the Matthews Correlation Coefficient (MCC) was also computed for every cross-dataset condition. MCC was reconstructed exactly from the precision/recall/accuracy triplet and the known class population sizes (by directly back-deriving the confusion-matrix components rather than through the equation); the correctness of this method was confirmed by the back-derived accuracy value matching the reported accuracy (difference $<$ 0.0001).
+
+To confirm that the observed cross-dataset performance decline constitutes a systematic finding independent of training-process randomness, the entire pipeline described in Sections~\ref{sec:methods}.1--\ref{sec:methods}.3 was repeated with three different random seeds (42, 123, 2024). For each seed, TRUSTLab's train/test split was resampled, the five models were retrained, and they were re-tested on the entirety of both target datasets (without subsampling). Results are reported as mean $\pm$ standard deviation; the significance of the difference between within-dataset and cross-dataset ROC-AUC values was assessed via a paired t-test and the distribution-assumption-free Wilcoxon signed-rank test on the 15 paired observations obtained by pooling the five models and three seeds. This statistical validation approach is consistent with the practice adopted in recent cross-dataset IDS studies (using Wilcoxon signed-rank, McNemar, and DeLong tests~\cite{Alshammari2026}; using only the Wilcoxon signed-rank test~\cite{Eren2026}).
+
+\FloatBarrier
+\section{Results}
+\label{sec:results}
+
+\FloatBarrier
+\subsection{Within-Dataset Performance}
+
+Table~\ref{tbl5} shows the binary classification performance of the five models on TRUSTLab's test partition. The three tree-based models achieved similarly high performance (F1: 0.980--0.981, ROC-AUC: 0.999). 1D-CNN (F1 = 0.925) and LSTM (F1 = 0.928) fell below these values; this gap is consistent with the well-established observation that tree-based methods typically outperform deep networks on tabular, flow-based data.
+
+\begin{table}[width=.95\linewidth,cols=6,pos=htbp]
+\caption{Within-dataset binary classification performance on TRUSTLab (51 features, seed=42).}
+\label{tbl5}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}LRRRRR@{}}
+\toprule
+\textbf{Model} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{ROC-AUC} \\
+\midrule
+Random Forest & 0.984 & 0.971 & 0.992 & 0.981 & 0.999 \\
+XGBoost & 0.984 & 0.970 & 0.993 & 0.981 & 0.999 \\
+LightGBM & 0.983 & 0.967 & 0.993 & 0.980 & 0.999 \\
+1D-CNN & 0.935 & 0.918 & 0.932 & 0.925 & 0.989 \\
+LSTM & 0.938 & 0.928 & 0.927 & 0.928 & 0.987 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+A similar pattern emerges in the multiclass task (16 attack families): the tree-based models again show superior performance (macro-F1: 0.907--0.912), while the deep learning models fall markedly lower (macro-F1: 0.828--0.831) (Table~\ref{tbl6}).
+
+\begin{table}[width=.95\linewidth,cols=5,pos=htbp]
+\caption{Within-dataset multiclass (16-class) performance on TRUSTLab.}
+\label{tbl6}
+\begin{threeparttable}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}LRRRR@{}}
+\toprule
+\textbf{Model} & \textbf{Accuracy} & \textbf{Macro Precision} & \textbf{Macro Recall} & \textbf{Macro F1} \\
+\midrule
+Random Forest & 0.953 & 0.921 & 0.908 & 0.912 \\
+XGBoost & 0.953 & 0.919 & 0.909 & 0.912 \\
+LightGBM & 0.949 & 0.901 & 0.924 & 0.907 \\
+1D-CNN & 0.907 & 0.861 & 0.809 & 0.828 \\
+LSTM & 0.902 & 0.874 & 0.806 & 0.831 \\
+\bottomrule
+\end{tabular*}
+\begin{tablenotes}
+\footnotesize
+\item The multiclass task was not included in the multi-seed validation protocol (Section~\ref{sec:results}.5); the values in this table therefore belong to a separate, single training run.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+A class-level examination reveals which attack families carry a discriminative statistical signature. The DNS, Exfiltration, DDoS, API, and MITM classes all remained above an F1 score of 0.99 across all five models. In contrast, the Slowloris (F1: 0.65--0.69), Exploitation (0.76--0.77 for tree-based models, 0.41--0.53 for deep learning models), DoS (0.67--0.73), and BufferOverflow (0.73--0.77) classes proved markedly more difficult to separate. This pattern is consistent with the finding reported in TRUSTLab's own paper; the authors likewise report that low-and-slow attacks (Slowloris) and HTTP-based exploitation attempts blend with benign traffic because their resource-exhaustion symptoms resemble genuine user sessions~\cite{Villafranca2026}.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=.55\textwidth]{figures/Figure4_ClassHeatmap.png}
+\caption{Heatmap of F1 scores for five models across TRUSTLab's 16 classes. Dark-green regions (e.g., DNS, Exfiltration, DDoS) indicate consistently high performance across all models, whereas red-orange regions (Slowloris, and Exploitation particularly for deep learning models) indicate weak discrimination. The pronounced gap between tree-based models (F1$\approx$0.76) and deep learning models (F1$\approx$0.41--0.53) on the Exploitation class is also visually salient.}
+\label{fig4}
+\end{figure}
+
+\FloatBarrier
+\subsection{Cross-Dataset Performance}
+
+ROC-AUC declined markedly on both target datasets, with no model exceeding 0.78 (Table~\ref{tbl7}).
+
+\begin{table*}[width=\textwidth,cols=11,pos=htbp]
+\caption{Cross-dataset binary classification performance (F1, ROC-AUC), compared with within-dataset values (seed=42).\tnote{a}}
+\label{tbl7}
+\begin{threeparttable}
+\footnotesize
+\setlength{\tabcolsep}{2.6pt}
+\renewcommand{\arraystretch}{0.95}
+\begin{tabular}{@{}l c ccccc ccccc@{}}
+\toprule
+& \textbf{In-Dom.} & \multicolumn{5}{c}{\textbf{CICIDS2017}} & \multicolumn{5}{c}{\textbf{CSE-CIC-IDS2018}} \\
+\cmidrule(lr){3-7} \cmidrule(lr){8-12}
+\textbf{Model} & \textbf{AUC} & \textbf{Acc.} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} & \textbf{AUC} & \textbf{Acc.} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} & \textbf{AUC} \\
+\midrule
+RF      & 0.999 & 0.514 & 0.221 & 0.581 & 0.320 & 0.639 & 0.483 & 0.193 & 0.647 & 0.298 & 0.628 \\
+XGB     & 0.999 & 0.648 & 0.298 & 0.582 & 0.395 & 0.632 & 0.470 & 0.174 & 0.569 & 0.267 & 0.449 \\
+LGBM    & 0.999 & 0.607 & 0.188 & 0.301 & 0.232 & 0.610 & 0.532 & 0.189 & 0.535 & 0.279 & 0.524 \\
+1D-CNN  & 0.989 & 0.590 & 0.254 & 0.556 & 0.348 & 0.672 & 0.536 & 0.260 & 0.939 & 0.407 & 0.774 \\
+LSTM    & 0.987 & 0.528 & 0.233 & 0.609 & 0.337 & 0.565 & 0.513 & 0.240 & 0.868 & 0.376 & 0.653 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item[a] RF: Random Forest; XGB: XGBoost; LGBM: LightGBM.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+The difference between Random Forest's ROC-AUC values across the two target datasets is negligible (0.011). LightGBM (0.086) and LSTM (0.088) showed moderate consistency. 1D-CNN (0.103) and, in particular, XGBoost (0.183) exhibited the highest inconsistency. Notably, both 1D-CNN and LSTM achieved a higher AUC on CSE-CIC-IDS2018 than on CICIDS2017 (0.774 versus 0.672, and 0.653 versus 0.565, respectively); this suggests that the deep learning models, in contrast to the two tree-based models (XGBoost, LightGBM), may adapt comparatively better to CSE-CIC-IDS2018. 1D-CNN's recall on CSE-CIC-IDS2018 (0.939) being far higher than its precision (0.260) suggests that the model tends to flag most flows as attacks. The benign-to-attack ratios of CICIDS2017 and CSE-CIC-IDS2018 being more imbalanced than TRUSTLab's (1.33:1) (approximately 4:1 and 4.9:1, respectively) may have partly contributed to the observed performance differences.
+
+To assess whether model family (tree-based versus deep learning) determines overall cross-dataset robustness, the average AUC drop (within-dataset AUC minus the mean of the two targets) was computed across all three seeds from Section~\ref{sec:results}.5. The result shows no clear family-level distinction: the most robust model is 1D-CNN (mean drop = 0.308), followed by Random Forest (0.342); the most fragile model is XGBoost (0.480). The difference between the mean of the tree-based models (0.422) and the mean of the deep learning models (0.355) shows a small trend running counter to, rather than in favor of, the tree-based models. This finding indicates that cross-dataset robustness is a \textbf{model-specific} property rather than a property of model family. Figure~\ref{fig5} visualizes this three-seed average together with its standard deviation; unlike Table~\ref{tbl7}'s single seed=42 point estimate, the values here also reflect seed-to-seed variability.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=.85\textwidth]{figures/Figure5_ResultsBarChart.png}
+\caption{ROC-AUC performance of five models within-dataset (TRUSTLab) and on two independent target datasets (CICIDS2017, CSE-CIC-IDS2018); bars denote the mean across three seeds (42, 123, 2024), and error bars denote the standard deviation. Random Forest's narrow error bars indicate low seed-to-seed variance, whereas 1D-CNN's wide error bar on CICIDS2017 (std = 0.087) visually confirms that this model's cross-dataset behavior cannot be reliably characterized on the basis of a single seed.}
+\label{fig5}
+\end{figure}
+
+\FloatBarrier
+\subsection{Complementary Evaluation with the Matthews Correlation Coefficient}
+
+F1 score and accuracy are known to yield overly optimistic results, particularly on imbalanced datasets~\cite{ChiccoJurman2020}. For this reason, MCC was also computed for every cross-dataset condition (Table~\ref{tbl8}). Because MCC jointly and proportionally evaluates all four confusion-matrix components (TP, TN, FP, FN), unlike F1, which focuses solely on the positive class, it reflects whether a model is consistent across both classes.
+
+\begin{table}[width=.7\linewidth,cols=3,pos=htbp]
+\caption{Cross-dataset MCC values (reconstructed exactly from precision, recall, and accuracy).\tnote{a}}
+\label{tbl8}
+\begin{threeparttable}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}LRR@{}}
+\toprule
+\textbf{Model} & \textbf{CICIDS2017 MCC} & \textbf{CSE-CIC-IDS2018 MCC} \\
+\midrule
+Random Forest & 0.029 & 0.104 \\
+XGBoost & 0.073 & 0.010 \\
+LightGBM & 0.023 & 0.004 \\
+1D-CNN & 0.014 & 0.246 \\
+LSTM & 0.034 & 0.136 \\
+\bottomrule
+\end{tabular*}
+\begin{tablenotes}
+\footnotesize
+\item[a] The precision/recall/accuracy values underlying this table were obtained not from the multi-seed protocol in Section~\ref{sec:results}.5 but from a separate, single training run (in which precision and recall were additionally recorded alongside F1/AUC). Consequently, the F1/AUC values (indirectly) underlying this table may differ slightly from those in Tables~\ref{tbl5}/\ref{tbl7}; the MCC values themselves were consistently derived from this separate run's precision/recall/accuracy triplet.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+For reference, the within-dataset (TRUSTLab) MCC values are 0.945 for 1D-CNN, 0.897 for LSTM, and 0.975--0.976 for the tree-based models (based on a 72-feature reference measurement whose performance is very close to that of the 51-feature set).
+
+The MCC table reveals a picture even starker than that indicated by ROC-AUC. While within-dataset MCC values exceed 0.90, all cross-dataset MCC values remain below 0.25, with most falling below 0.10 -- a performance level quite close to the MCC = 0 boundary (equivalent to random guessing). The MCC values of XGBoost and LightGBM on CSE-CIC-IDS2018 (0.010 and 0.004, respectively) drop to nearly zero; although these two models appear ``weak but functional'' according to ROC-AUC (0.42 and 0.51), they are practically indistinguishable from a random classifier according to MCC. This finding shows that ROC-AUC alone can create a misleading impression of optimism regarding cross-dataset transfer success, and supports the case for reporting MCC as a complementary metric in future cross-dataset IDS studies.
+
+\FloatBarrier
+\subsection{Cross-Dataset Analysis at the Single-Attack Level}
+
+Aggregate binary classification (merging all attack families under a single ``Attack'' label) does not make it possible to distinguish the cross-dataset transfer of different attack types from one another. To address this limitation, following an approach similar to that of Cantone et al.~\cite{Cantone2024}, separate binary models (benign traffic versus a single family only) were trained and cross-dataset tested for the five attack families sharing a common taxonomy between TRUSTLab and the target datasets (DDoS, DoS, Bruteforce, WebBased, PortScan). For the WebBased family, three subcategories of the target datasets (Brute Force, XSS, SQL Injection) were merged so as to be comparable with TRUSTLab's single WebBased label. PortScan was tested only on CICIDS2017, as it is not present in CSE-CIC-IDS2018. The benign-to-attack ratio was fixed at 10:1 in the training set, while benign samples in the target datasets were subsampled at a rate of 4\% owing to memory constraints.
+
+Figure~\ref{fig6} shows the cross-dataset F1 scores of the five families broken down by model. The results diverge markedly from the general pattern observed in the aggregate binary classification at three points.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=.9\textwidth]{figures/Figure6_SingleAttackHeatmap.png}
+\caption{Cross-dataset F1 scores for five attack families (rows: attack family, columns: model). The left panel shows the CICIDS2017 target and the right panel the CSE-CIC-IDS2018 target; PortScan is available only in CICIDS2017.}
+\label{fig6}
+\end{figure}
+
+First, the DDoS and DoS families showed the highest transferability; the tree-based models raised the F1 score to the 0.64--0.86 range on CSE-CIC-IDS2018. Second, the Bruteforce and WebBased families exhibited a near-total collapse; four of the five models yielded an F1 score close to zero. This collapse in WebBased can be partly explained by the extremely low sample counts in the target datasets (2,180 attack samples in CICIDS2017 and only 928 in CSE-CIC-IDS2018), but the observation of a similar collapse in Bruteforce despite a much higher sample count (13,835 in CICIDS2017 and 380,949 in CSE-CIC-IDS2018) indicates that low sample count is not the sole explanation.
+
+The third and most striking finding emerges in the PortScan family. In this family, 1D-CNN (F1 = 0.909) and LSTM (F1 = 0.896) performed markedly better than XGBoost (F1 = 0.000) and LightGBM (F1 = 0.001), with Random Forest occupying an intermediate position (F1 = 0.615). This pattern is consistent with the finding identified in Section~\ref{sec:results}.2 on the basis of the three-seed average: cross-dataset robustness varies \textbf{model-specifically} rather than according to model family (tree-based or deep learning). Although the two most robust models in PortScan (1D-CNN, LSTM) belong to the deep learning family and the two most fragile (XGBoost, LightGBM) belong to the tree-based family, the two most robust models in the aggregate binary classification (1D-CNN, Random Forest) come from different families -- confirming once again that no single family is systematically superior. PortScan's periodic, low-volume, high-frequency scanning behavior is thought to carry a pattern that deep learning architectures capture better than tree-based models for this particular attack type.
+
+Furthermore, 1D-CNN's repeated F1 = 0 outcomes in the DDoS, Bruteforce, and WebBased families (with the exception of PortScan) confirm that the threshold-calibration issue identified in Section~\ref{sec:results}.2 is not specific to aggregate binary classification, and also emerges systematically at the family level.
+
+The full numerical results in Table~\ref{tbl9} confirm the three findings above across all families.
+
+\begin{table*}[width=\textwidth,cols=8,pos=htbp]
+\caption{Cross-dataset results at the single-attack level (25 rows: 5 families $\times$ 5 models; PortScan was tested only on CICIDS2017).}
+\label{tbl9}
+\footnotesize
+\begin{tabular*}{\tblwidth}{@{}llRRRRRR@{}}
+\toprule
+\textbf{Family} & \textbf{Model} & \textbf{In-Dom. F1} & \textbf{In-Dom. AUC} & \textbf{CIC F1} & \textbf{CIC AUC} & \textbf{CSE F1} & \textbf{CSE AUC} \\
+\midrule
+\multirow{5}{*}{DDoS} & RandomForest & 1.000 & 1.000 & 0.501 & 0.776 & 0.642 & 0.754 \\
+ & XGBoost & 1.000 & 1.000 & 0.506 & 0.543 & 0.759 & 0.757 \\
+ & LightGBM & 1.000 & 1.000 & 0.506 & 0.660 & 0.759 & 0.804 \\
+ & 1D-CNN & 1.000 & 1.000 & 0.000 & 0.255 & 0.000 & 0.459 \\
+ & LSTM & 0.999 & 1.000 & 0.000 & 0.767 & 0.000 & 0.655 \\
+\addlinespace
+\multirow{5}{*}{DoS} & RandomForest & 1.000 & 1.000 & 0.454 & 0.424 & 0.812 & 0.831 \\
+ & XGBoost & 1.000 & 1.000 & 0.443 & 0.400 & 0.787 & 0.828 \\
+ & LightGBM & 1.000 & 1.000 & 0.433 & 0.450 & 0.863 & 0.822 \\
+ & 1D-CNN & 1.000 & 1.000 & 0.000 & 0.385 & 0.000 & 0.735 \\
+ & LSTM & 0.999 & 1.000 & 0.482 & 0.468 & 0.829 & 0.781 \\
+\addlinespace
+\multirow{5}{*}{Bruteforce} & RandomForest & 0.968 & 0.999 & 0.051 & 0.508 & 0.319 & 0.651 \\
+ & XGBoost & 0.970 & 1.000 & 0.000 & 0.484 & 0.000 & 0.327 \\
+ & LightGBM & 0.969 & 0.999 & 0.000 & 0.240 & 0.000 & 0.358 \\
+ & 1D-CNN & 0.916 & 0.997 & 0.000 & 0.161 & 0.000 & 0.254 \\
+ & LSTM & 0.833 & 0.973 & 0.000 & 0.458 & 0.000 & 0.516 \\
+\addlinespace
+\multirow{5}{*}{WebBased} & RandomForest & 1.000 & 1.000 & 0.000 & 0.488 & 0.000 & 0.476 \\
+ & XGBoost & 1.000 & 1.000 & 0.000 & 0.523 & 0.001 & 0.390 \\
+ & LightGBM & 1.000 & 1.000 & 0.000 & 0.531 & 0.004 & 0.749 \\
+ & 1D-CNN & 0.969 & 0.999 & 0.000 & 0.127 & 0.000 & 0.451 \\
+ & LSTM & 0.934 & 0.994 & 0.029 & 0.564 & 0.063 & 0.515 \\
+\addlinespace
+\multirow{5}{*}{PortScan} & RandomForest & 0.996 & 1.000 & 0.615 & 0.775 & --- & --- \\
+ & XGBoost & 0.995 & 1.000 & 0.000 & 0.321 & --- & --- \\
+ & LightGBM & 0.996 & 1.000 & 0.001 & 0.687 & --- & --- \\
+ & 1D-CNN & 0.978 & 1.000 & 0.909 & 0.832 & --- & --- \\
+ & LSTM & 0.954 & 0.970 & 0.896 & 0.890 & --- & --- \\
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+To assess whether the point estimates in Table~\ref{tbl9} carry statistical uncertainty, the 95\% confidence interval of F1 was computed via 1,000-resample bootstrap resampling for all five attack families (WebBased and Bruteforce first, followed by DDoS, DoS, and PortScan from a separate training run).\footnote{The bootstrap analysis for DDoS/DoS/PortScan was carried out in a separate training run. The tree-based models and the deep learning results for PortScan/DoS were found to be largely consistent with the original point estimates in Table~\ref{tbl9}; however, the CICIDS2017 F1 values of 1D-CNN and LSTM in the DDoS family in this new run (0.419 and 0.448, respectively) were found to differ markedly from the original values in Table~\ref{tbl9} (both 0.000). This discrepancy is another instance of the non-full-determinism in the TensorFlow/GPU training process also observed in Section~\ref{sec:results}.5; even when the same random seed (42) is used, the GPU-level operations of deep learning models (cuDNN operations in particular) do not guarantee an identical outcome. This observation once again emphasizes that caution is warranted in interpreting single-run deep learning results, particularly sharp values such as F1 = 0.} For the small-sample families (928--2,180 attack samples in WebBased, 13,835--380,949 in Bruteforce), the result is, at first glance, the opposite of what would be expected: across all combinations yielding F1 = 0.000, none of the 1,000 bootstrap resamples produced an F1 different from 0 (CI width = 0.000). This indicates that the observed zero performance is not a noisy estimate arising from small sample size, but reflects the model systematically and reproducibly assigning low probability to genuine attack samples. For the large-sample families (128,027--1,263,933 attack samples in DDoS, 252,661--654,300 in DoS, 158,930 in PortScan), the CI widths were, as expected, even narrower (mean 0.0025, maximum 0.0053); this is consistent with the statistical expectation that larger sample sizes reduce estimation uncertainty. In cases where F1 $>$ 0, the confidence interval is consistently narrow relative to the point estimate (e.g., Bruteforce/Random Forest/CSE-CIC-IDS2018: F1 = 0.319, 95\% CI = [0.317, 0.320]; DoS/LightGBM/CSE-CIC-IDS2018: F1 = 0.863, 95\% CI = [0.863, 0.864]). This finding confirms, across all five families, that the point estimates in Section~\ref{sec:results}.4 are reliable findings rather than a statistical sampling artifact.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=.95\textwidth]{figures/Figure7_BootstrapForestPlot.png}
+\caption{F1 point estimates and 95\% bootstrap confidence intervals (1,000 resamples) for five models across all five attack families (DDoS, DoS, Bruteforce, WebBased, PortScan); the left panel shows CICIDS2017 (25 points) and the right panel CSE-CIC-IDS2018 (20 points, excluding PortScan). The predominantly imperceptible width of the error bars visually confirms that the point estimates are stable findings independent of sampling uncertainty. In the PortScan row, the marked superiority of 1D-CNN and LSTM (purple/red) over XGBoost and LightGBM (orange/green) also visually highlights the ``model-specific robustness'' finding discussed in Section~\ref{sec:results}.4.}
+\label{fig7}
+\end{figure}
+
+\FloatBarrier
+\subsection{Multi-Seed Validation and Statistical Significance}
+
+To assess the extent to which the results in Sections~\ref{sec:results}.1--\ref{sec:results}.2 (generated with a single random seed, 42) depend on the randomness of the training process, the binary classification pipeline was repeated with three seeds (42, 123, 2024); the mean $\pm$ standard deviation values for the five models are summarized in Table~\ref{tbl10}.
+
+\begin{table*}[width=\textwidth,cols=7,pos=htbp]
+\caption{Multi-seed (n=3) binary classification results, mean $\pm$ standard deviation.}
+\label{tbl10}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}l c c c c c c@{}}
+\toprule
+\textbf{Model} & \textbf{In-Dom. F1} & \textbf{In-Dom. AUC} & \textbf{CIC F1} & \textbf{CIC AUC} & \textbf{CSE F1} & \textbf{CSE AUC} \\
+\midrule
+RandomForest & 0.9814$\pm$0.0000 & 0.9991$\pm$0.0000 & 0.311$\pm$0.010 & 0.649$\pm$0.009 & 0.303$\pm$0.007 & 0.665$\pm$0.035 \\
+XGBoost & 0.9815$\pm$0.0001 & 0.9992$\pm$0.0000 & 0.331$\pm$0.072 & 0.603$\pm$0.039 & 0.281$\pm$0.015 & 0.435$\pm$0.015 \\
+LightGBM & 0.9803$\pm$0.0001 & 0.9989$\pm$0.0000 & 0.263$\pm$0.050 & 0.582$\pm$0.031 & 0.267$\pm$0.021 & 0.531$\pm$0.017 \\
+1D-CNN & 0.9184$\pm$0.0056 & 0.9866$\pm$0.0065 & 0.299$\pm$0.102 & 0.619$\pm$0.087 & 0.422$\pm$0.013 & 0.738$\pm$0.054 \\
+LSTM & 0.9303$\pm$0.0024 & 0.9884$\pm$0.0010 & 0.330$\pm$0.040 & 0.531$\pm$0.085 & 0.349$\pm$0.025 & 0.642$\pm$0.071 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+Three notable patterns emerge. First, in within-dataset performance, the standard deviation of the tree-based models is negligible (F1 std $\leq$ 0.0001, AUC std $\approx$ 0.0000); this is consistent with the near-deterministic nature of tree ensembles and with TRUSTLab's large scale (3.6 million training samples) suppressing randomness-driven variance. The deep learning models, as expected owing to weight-initialization randomness, showed higher within-dataset variance (1D-CNN F1 std = 0.0056). Second, cross-dataset variance is systematically higher than within-dataset variance; 1D-CNN's CICIDS2017 AUC standard deviation (0.087) is particularly notable and shows that this model's cross-dataset behavior cannot be reliably characterized on the basis of a single seed. Third, the mean cross-dataset AUC values for all models remained of the same order of magnitude as the single-seed values reported in Section~\ref{sec:results}.2; this confirms that the main finding (cross-dataset performance loss) is not a coincidence specific to a particular seed choice.
+
+To assess the statistical significance of the difference between within-dataset and cross-dataset ROC-AUC, a paired t-test and the Wilcoxon signed-rank test were applied to the 15 paired observations obtained by pooling the five models and three seeds. The difference between within-dataset and CICIDS2017 was found to be highly significant in both the parametric (t = 24.72; p = 6.0$\times$10$^{-13}$) and the non-parametric (Wilcoxon; p = 6.1$\times$10$^{-5}$) test; the effect size is very large (Cohen's d = 6.38). The difference between within-dataset and CSE-CIC-IDS2018 is likewise significant (t = 12.63; p = 4.8$\times$10$^{-9}$; Wilcoxon p = 6.1$\times$10$^{-5}$; d = 3.26). These results confirm that the cross-dataset performance loss is a strong and consistent statistical effect rather than a weak tendency lost within random variation.
+
+\FloatBarrier
+\subsection{Feature Count Ablation: 51 $\rightarrow$ 10 $\rightarrow$ 5}
+
+By averaging the feature-importance rankings of the three tree-based models in Table~\ref{tbl4b} within the 51-feature space, the top 5 (\texttt{Down/Up Ratio}, \texttt{Flow Byts/s}, \texttt{Pkt Len Min}, \texttt{Dst Port}, \texttt{Pkt Len Std}) and top 10 most important features were identified; with these two subsets, the five models were retrained with \textbf{three seeds} (42, 123, 2024), consistent with the protocol in Section~\ref{sec:results}.5, and tested on the two target datasets. This experiment examines the question of whether the small number of features the model relies on most heavily is more robust or more fragile in cross-dataset transfer, without being subject to the noise of a single-seed measurement.
+
+Looking at the three-seed average of the five models, the two target datasets exhibit \textbf{different patterns}. On CSE-CIC-IDS2018, cross-dataset AUC increases monotonically as the number of features grows (0.446, 0.535, and 0.587 for 5$\to$10$\to$51 features, respectively); this shows that the complementary information carried by additional features consistently contributes to cross-dataset performance on this target. On CICIDS2017, in contrast, the pattern is not monotonic: the mean AUC is 0.567 at 5 features, reaches a peak (0.604) at 10 features, and then falls back to 0.572 at 51 features. This peak is not noise-driven -- Random Forest's 10-feature mean on CICIDS2017 (0.514) remains lower than both its 5-feature (0.584) and 51-feature (0.649) values, and this decline is supported by a very small standard deviation (0.011). These findings neither consistently support the hypothesis that a reduced set of the few features a model relies on most is more robust, nor do they support the simple generalization that ``more features are always better''; the outcome appears to depend on the target dataset.
+
+Examined at the model level, notable variance persists despite the three-seed averaging (Figure~\ref{fig8}). LSTM's standard deviation on CICIDS2017 falls from 0.085 at 51 features to 0.021 at 5 features; this suggests that reducing the number of features can lower seed-to-seed variance for some models (likely because a lower-dimensional input space simplifies the optimization surface). 1D-CNN, in contrast, exhibits the opposite pattern: at 5 features, its CICIDS2017 standard deviation reaches a very high value of 0.147, indicating that this model may exhibit unstable learning behavior on extremely low-dimensional inputs.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=.9\textwidth]{figures/Figure8_AblationCurve.png}
+\caption{Cross-dataset ROC-AUC performance of five models with 5, 10, and 51 features on CICIDS2017 (left) and CSE-CIC-IDS2018 (right); error bars denote the standard deviation across three seeds (42, 123, 2024). The dashed black line denotes the mean across five models. The monotonic increasing trend on CSE-CIC-IDS2018 (right panel) stands in marked contrast to the non-monotonic pattern peaking at 10 features on CICIDS2017 (left panel).}
+\label{fig8}
+\end{figure}
+
+\FloatBarrier
+\section{Discussion}
+\label{sec:discussion}
+
+The findings show that high performance measured on a single dataset is not preserved under cross-dataset conditions, and that this decline is a systematic pattern rather than noise. Random Forest yielding nearly identical ROC-AUC values across two independent target datasets (difference of 0.011) is one of the strongest pieces of evidence for this claim: if the decline were a coincidence specific to a particular target dataset, such a similar result would not be expected across two different datasets. This consistency is not observed across all models -- LSTM exhibits a larger difference (0.088) between the same two targets -- but this very difference supports the ``model-specific robustness'' finding revealed by the multi-seed analysis.
+
+The results of this study are directly comparable to the findings reported by Cantone, Marrocco, and Bria using the same two datasets (CICIDS2017 and CSE-CIC-IDS2018). In their study, the average within-dataset MCC of 94.63\% fell to 29.35\% under cross-dataset conditions~\cite{Cantone2024}; the ROC-AUC decline observed in this study (from 0.99 to the 0.45--0.77 range) reflects a performance loss of similar magnitude. Two independent research groups arriving at similar results with different model sets and partly different feature-engineering approaches suggests that the observed loss is not the product of a particular methodological choice, but reflects a limitation inherent to datasets of the CICIDS family.
+
+The results found by Eren et al. across BoT-IoT, ToN-IoT, and UNSW-NB15 also point in the same direction; the drop in test recall to 0.002 in the DoS scenario and in test ROC-AUC to 0.369 in the DDoS scenario are of the same order of magnitude as the findings of this study~\cite{Eren2026}. Considered together, these three studies suggest that cross-dataset performance loss is not specific to IoT datasets alone or to a particular research group's methodology, but constitutes a general limitation of flow-based intrusion detection models.
+
+The analysis of the 13 removed features indicates that part of this limitation is preventable. A feature such as \texttt{Init Bwd Win Byts} accounting for more than one-third of XGBoost's decisions shows that the model may have learned the fingerprint of the test environment rather than attack detection. The persistence of performance loss even after such features were removed (the ROC-AUC improvement from 72 to 51 features remained limited) confirms that the underlying problem does not lie in a handful of ``contaminated'' features, but in a genuine distribution difference spread across the remaining features in general. This distinction yields a practical implication for future cross-dataset studies: feature cleaning is necessary but not sufficient; what is actually needed is techniques such as domain adaptation or domain-invariant representation learning.
+
+1D-CNN and LSTM behaving inconsistently to different degrees across the two target datasets (AUC differences of 0.103 and 0.088, respectively) shows that even a single model's cross-dataset behavior can vary substantially depending on the target dataset. However, the analysis based on the three-seed average shows that this inconsistency is not a model-family property -- the most consistent model (Random Forest, difference = 0.011) and the most inconsistent model (XGBoost, difference = 0.183) belong to the same family. This illustrates concretely why the study's two-dataset, multi-seed design yields a more reliable result than a single-dataset, single-run design: model-specific behaviors can be concealed by family-level generalizations.
+
+The single-attack-level findings confirm the finding that cross-dataset robustness is \textbf{model-specific} at the attack-type level as well. 1D-CNN and LSTM outperforming XGBoost and LightGBM by a clear margin in the PortScan family once again shows that there is no single answer to ``which model family is more robust'' -- indeed, the two most robust models in the aggregate binary classification (1D-CNN, Random Forest) also come from different families. This finding aligns with the study of D'Hooge et al.~\cite{Dhooge2020}, who conducted a cross-dataset evaluation limited to DoS and Botnet attacks only and reported a similar generalization failure; their being confined to a single attack-type subset as well shows that attack-type-level disaggregated analysis remains exceptional in the literature.
+
+This finding appears, at first glance, to contradict the finding of Elangovan et al.~\cite{Elangovan2026}, introduced in Section~\ref{sec:related}, that ``tree-based ensembles exhibit lower degradation than neural-network-based models.'' However, methodological differences between the two studies may explain this apparent contradiction. Their study examines enterprise-to-IoT domain transfer (four different data-collection contexts, a temporal range spanning 2017--2024), whereas this study examines transfer within the CIC family (the same producing institution, the same CICFlowMeter tool, a narrow temporal range). Furthermore, their model set (Random Forest, Gradient Boosting, MLP, Autoencoder, 1D-CNN) overlaps only partially with this study's (Random Forest, XGBoost, LightGBM, 1D-CNN, LSTM); in particular, the inclusion of an Autoencoder (a reconstruction-error-based, threshold-sensitive anomaly-detection approach) may have caused their ``neural network models'' category to behave differently from ours. This comparison reinforces the view that the claim ``tree-based models are generally more robust in cross-dataset settings'' has not been consistently confirmed across at least two different research groups, two different dataset families, and two different model sets, and should therefore be treated as conditional and context-dependent.
+
+The MCC results (Table~\ref{tbl8}) show that the impression given by ROC-AUC alone can be partly optimistic. For instance, in the training run underlying Table~\ref{tbl8}, XGBoost's ROC-AUC on CICIDS2017 gives an impression of moderate discriminative power at 0.565, while the same model's MCC value (0.073) remains very close to random guessing. This inconsistency arises because ROC-AUC is a threshold-independent ranking metric and does not guarantee the existence of an operating point that balances precision and recall simultaneously. The claim put forward by Chicco and Jurman~\cite{ChiccoJurman2020} in the context of genomic data classification -- that MCC provides a more honest summary statistic than F1 and accuracy in imbalanced classification tasks -- aligns with the results this study finds in the cross-dataset IDS context. The same threshold-calibration issue is also observed in 1D-CNN's F1 = 0 outcome in four of the five families in the single-attack analysis; the AUC values of these models remained mostly significantly different from zero, suggesting that the model learned the discriminative signal but that the fixed 0.5 threshold is not suited to the target dataset.
+
+Taken as a whole, the findings confirm the warning of Catillo et al.~\cite{Catillo2023} that the confidence widely held in the academic community regarding the extent to which publicly available intrusion detection datasets advance the protection of real networks should be approached with careful skepticism. This study substantiates that warning by systematically testing it across five attack families and two independent targets, rather than remaining confined to a single dataset pair and a single attack type.
+
+The multi-seed results statistically confirm that the single-seed findings are not a random pattern (p $< 10^{-4}$, Cohen's d $>$ 3 on both targets). Nevertheless, the high cross-dataset variance observed (particularly 1D-CNN's CICIDS2017 AUC std = 0.087) is itself a noteworthy finding: it shows that some models' cross-dataset behavior is problematic not only in terms of the average performance drop, but also in terms of the \textbf{predictability} of that drop. Random Forest's low seed-to-seed variance (CICIDS2017 AUC std = 0.009) suggests that this model may be advantageous for operational deployment in terms of reproducibility; however, this low variance does not mean that its average cross-dataset performance is also the best -- 1D-CNN, which has higher variance, showed a slightly better average performance than Random Forest across the three-seed mean. Variance (consistency) and average performance should therefore be treated as two independent evaluation dimensions.
+
+\FloatBarrier
+\section{Limitations and Future Work}
+\label{sec:limitations}
+
+This study has several limitations that should be considered across different categories.
+
+\textbf{Scope limitations.} A multiclass cross-dataset test was not performed owing to a three-level incompatibility between TRUSTLab's taxonomy and the attack categories of CICIDS2017/CSE-CIC-IDS2018 (categories with no one-to-one counterpart, and identically named categories covering different techniques); this is a limitation accepted in the literature but one that conceals transfer behavior at the attack-family level. The single-attack analysis in Section~\ref{sec:results}.4 partly closes this gap, but does not substitute for a full multiclass evaluation. In addition, both cross-dataset targets were generated from synthetic, VM-based enterprise test environments; they do not include genuine IoT protocols such as MQTT, CoAP, or Zigbee, and TRUSTLab itself, despite being positioned as ``IoT/edge,'' predominantly carries enterprise/API traffic. The IoTID20 dataset, collected from real IoT devices, was considered as a third target but could not be included in this study owing to time constraints; testing the generalizability of the findings to genuine IoT traffic is a valuable direction for future work. Transfer to datasets using different feature-extraction tools, such as CICIoT2023, was likewise excluded from scope owing to schema incompatibility; such an extension was assessed as a separate research topic requiring the reprocessing of raw PCAP files with CICFlowMeter.
+
+\textbf{Methodological choices.} The hyperparameters listed in Table~\ref{tbl4c} were determined not through a systematic search but through reasonable default values common in the literature, and were held fixed throughout all experiments; while this prioritized comparability across experiments, it is not guaranteed that any model reached an optimal configuration -- this difference should be kept in mind when compared with the study of Cantone et al.~\cite{Cantone2024}, who applied systematic grid search. The feature count ablation (Section~\ref{sec:results}.6) examined only the 5- and 10-feature subsets, and intermediate points (such as 15, 20, or 30 features) were not tested; consequently, the exact location of the 10-feature peak observed on CICIDS2017 cannot be determined with certainty. Two choices in the single-attack analysis should also be noted: benign samples in the target datasets were subsampled at a fixed rate of 4\%, differing from the 10:1 ratio in the training set, and all models were evaluated with a fixed decision threshold of 0.5. The second choice is particularly important -- part of the repeatedly observed F1 = 0 outcomes in 1D-CNN may stem not from the model failing to learn the discriminative signal at all, but from the learned probability scores not being calibrated to the target dataset; target-dataset-specific threshold optimization (such as Platt scaling or isotonic regression) could clarify this question in the future.
+
+\textbf{Statistical power.} The three seeds in the multi-seed protocol constitute a relatively small sample for estimating per-model variance; the high variance observed particularly in 1D-CNN (CICIDS2017 AUC std = 0.087) was estimated only as a rough approximation from three points. The significance test performed by pooling five models and three seeds (n = 15) strongly supports the general validity of the main finding, but does not have sufficient power to precisely distinguish fine model-level differences (such as the robustness difference between XGBoost and LightGBM). Similarly, the bootstrap confidence interval analysis covering all five attack families relies on only a single training run per family and measures sampling uncertainty, not the uncertainty arising from training randomness -- the deep learning run-to-run inconsistency observed in the DDoS family illustrates the importance of this distinction.
+
+\FloatBarrier
+\section{Conclusion}
+\label{sec:conclusion}
+
+This study examined the extent to which five models trained on the TRUSTLab dataset transfer to CICIDS2017 and CSE-CIC-IDS2018, together with a systematic feature-alignment and artifact-removal process. While the models achieved an F1 score above 0.92 on their own test partition, their ROC-AUC fell to the 0.45--0.77 range on the two independent target datasets. Random Forest yielding nearly identical results across the two target datasets, and this systematicity being statistically supported by validation repeated across three random seeds (paired t-test and Wilcoxon signed-rank test, p $< 10^{-4}$; Cohen's d $>$ 3 on both targets), reveals that the observed decline is a strong and consistent effect rather than random fluctuation.
+
+This general pattern varies substantially by attack type: DDoS and DoS transferred moderately well, Bruteforce and WebBased transferred almost not at all, and in PortScan the deep learning models markedly outperformed the tree-based models -- these findings, confirmed by bootstrap confidence intervals, indicate that cross-dataset robustness is model-specific rather than a property of model family. The findings provide a concrete answer to the cross-dataset transfer question raised by TRUSTLab's authors, showing that feature-schema alignment alone is not sufficient and that test-environment-specific artifacts must be systematically detected and removed. High performance obtained on a single dataset cannot be regarded as an operational guarantee; cross-dataset evaluation, at both the aggregate and attack-type level, supported by statistical validation, needs to become standard practice in intrusion detection research.
+
+\section*{Declaration of Generative AI Use}
+During the preparation of this manuscript, the author used an AI-assisted language model (Claude, Anthropic) to support English translation of the manuscript and formatting/editorial refinement. The author reviewed and edited all AI-assisted content and takes full responsibility for the accuracy and integrity of the published work.
+
+\section*{Declaration of Competing Interests}
+The author declares that there is no known competing financial interest or personal relationship that could have appeared to influence the work reported in this paper.
+
+\section*{Funding}
+This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
+
+\section*{Data Availability}
+The TRUSTLab, CICIDS2017, and CSE-CIC-IDS2018 datasets analyzed in this study are publicly available from their original sources, as cited in the References section~\cite{Villafranca2026,Sharafaldin2018}. The trained models and analysis scripts generated during this study are available from the corresponding author upon reasonable request.
+
+\bibliographystyle{unsrt}
+\bibliography{cas-refs}
+
+\end{document}

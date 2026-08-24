@@ -1,0 +1,13 @@
+﻿Tablo 4a: Dört-metrikli drift doğrulaması: en yüksek ortalama şiddete sahip 10 özellik (51 özelliklik nihai küme içinde).
+
+Özellik,KS,KL,JS,Wasserstein
+Pkt Len Min,"0,954","4,442","0,638","0,412"
+Fwd Pkt Len Min,"0,778","2,887","0,420","0,218"
+SYN Flag Cnt,"0,633","15,569","0,270","0,112"
+Bwd Pkt Len Min,"0,603","2,056","0,378","0,175"
+Dst Port,"0,569","1,008","0,198","0,379"
+Down/Up Ratio,"0,311","19,616","0,296","0,030"
+FIN Flag Cnt,"0,356","12,243","0,143","0,087"
+Fwd Pkt Len Mean,"0,616","0,713","0,160","0,049"
+Fwd Seg Size Avg,"0,616","0,713","0,160","0,049"
+Pkt Len Mean,"0,492","0,897","0,257","0,074"

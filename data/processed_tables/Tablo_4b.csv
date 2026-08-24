@@ -1,0 +1,9 @@
+﻿Tablo 4b: Bulk istatistiklerinin üç modeldeki önem sıralaması (72 özellik içinde; 1=en önemli).
+
+Özellik,RandomForest Sırası,XGBoost Sırası,LightGBM Sırası
+Fwd Byts/b Avg,3,34,10
+Bwd Byts/b Avg,5,5,12
+Fwd Pkts/b Avg,6,9,4
+Fwd Blk Rate Avg,14,10,21
+Bwd Blk Rate Avg,19,16,22
+Bwd Pkts/b Avg,13,18,18

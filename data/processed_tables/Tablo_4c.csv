@@ -1,0 +1,25 @@
+﻿Tablo 4c: Beş modelin tam hiperparametre konfigürasyonu.
+
+Model,Hiperparametre,Değer
+Random Forest,n_estimators,200
+,max_depth,20
+,n_jobs,−1 (tüm çekirdekler)
+XGBoost,n_estimators,200
+,max_depth,8
+,tree_method,hist
+,eval_metric,logloss
+LightGBM,n_estimators,200
+,max_depth,8
+,class_weight,balanced (yalnızca çok sınıflı görevde)
+1D-CNN,Evrişim katmanları,"Conv1D(64, çekirdek=3) → Conv1D(128, çekirdek=3)"
+,Normalizasyon,Her evrişimden sonra BatchNormalization
+,Havuzlama,"MaxPooling1D(2), ardından GlobalAveragePooling1D"
+,Yoğun katman,"Dense(64, ReLU) → Dropout(0,3) → Dense(1, Sigmoid)"
+LSTM,Yinelemeli katmanlar,"LSTM(64, return_sequences=True) → LSTM(32)"
+,Yoğun katman,"Dense(64, ReLU) → Dropout(0,3) → Dense(1, Sigmoid)"
+"DL ortak (1D-CNN, LSTM)",Optimizer,Adam
+,Kayıp fonksiyonu,Binary cross-entropy
+,Epoch (üst sınır),15
+,Batch boyutu,1024
+,Doğrulama ayrımı,%10
+,Erken durdurma,"val_loss izlenerek, sabır=5"

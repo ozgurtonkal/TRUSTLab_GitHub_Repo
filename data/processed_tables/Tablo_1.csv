@@ -1,0 +1,11 @@
+﻿Tablo 1: Cross-dataset genelleme çalışmalarının ayrıntılı karşılaştırması.
+
+Çalışma,Hedef Veri Setleri,Artefakt Tespit Yöntemi,Model Türleri,Şema-Uyumluluk Taraması¹,Çoklu-Hedef Tutarlılık Kanıtı
+D'Hooge ve ark. [20],2 veri seti (yalnızca DoS/Botnet saldırı sınıflarıyla sınırlı),Yok,Ağaç tabanlı,✗,✗
+Verkerken ve ark. [21],2 veri seti (denetimsiz modellerle değerlendirilmiş),Yok,Denetimsiz (ağaç/DL değil),✗,✗
+"Sarhan ve ark. [1,2]",NF-v2 ailesi (çoklu NetFlow-uyumlu veri seti),Ortak NetFlow şeması (standardizasyon; istatistiksel tarama değil),Ağaç tabanlı,✗,◐
+Cantone ve ark. [5],"CIC-IDS2017, CSE-CIC-IDS2018 + 2 türetilmiş varyant (LycoS ailesi)",Sonuç-sonrası görselleştirme (t-SNE); sonuç-öncesi istatistiksel test yok,Ağaç tabanlı,✗,✓
+Eren ve ark. [6],"BoT-IoT, ToN-IoT, UNSW-NB15","4 istatistiksel metrik (KS, KL ıraksaması, JS ıraksaması, Wasserstein mesafesi)",Ağaç + DL,✗,✓
+Elangovan ve ark. [18],"CIC-IDS2017, CSE-CIC-IDS2018, CICIoT2023, CIC-DIAD2024",Semantik özellik grubu istikrar analizi (a priori gruplama; istatistiksel test değil),Ağaç + DL,✓ (uyumsuz özellikler dışlanmış),✓
+Amin ve ark. [19],"NF-UNSW-NB15, NF-BoT-IoT, NF-ToN-IoT, NF-CIC-IDS2018",Yok (mimari çözüm: yığınlanmış topluluk modeli),DL,✗,✓
+**Bu çalışma**,"**CICIDS2017, CSE-CIC-IDS2018 (CICIoT2023 değerlendirilip elendi)**","**KS-testi (59 özellik) + 4-metrikli doğrulama (KL/JS/Wasserstein, 51 özellik) + çoklu-model özellik önemi (3 model), tümü sonuç-öncesi**",**Ağaç + DL**,**✓ (CICIoT2023 şema uyumsuzluğu nedeniyle elendi)**,**✓**
